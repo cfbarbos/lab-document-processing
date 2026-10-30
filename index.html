@@ -1,0 +1,784 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab 3 — Classificar documentos e extrair dados com um Agentic Workflow</title>
+<meta name="description" content="Crie um agente que recebe um PDF no chat, identifica se é um contrato ou uma fatura e extrai os campos principais de cada um, usando um agentic workflow com classificador e extratores de documentos.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#ffffff; --bg-soft:#f4f4f4; --bg-code:#f6f7f9; --border:#e0e0e0;
+  --ink:#161616; --ink-2:#525252; --ink-3:#6f6f6f;
+  --accent:#0f62fe; --accent-soft:#edf5ff; --accent-ink:#0043ce;
+  --header:#161616; --header-ink:#f4f4f4;
+  --d-line:#8d8d8d; --d-kb:#f2f2f2; --d-accent-fill:#e5f0ff; --d-ua-fill:#e8f5ec; --d-ua-stroke:#24a148;
+  --radius:8px;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#161616; --bg-soft:#1f1f1f; --bg-code:#1c1d21; --border:#393939;
+    --ink:#f4f4f4; --ink-2:#c6c6c6; --ink-3:#a8a8a8;
+    --accent:#78a9ff; --accent-soft:#0f2a5c; --accent-ink:#a6c8ff;
+    --header:#0b0b0b; --header-ink:#f4f4f4;
+    --d-line:#8d8d8d; --d-kb:#262626; --d-accent-fill:#0f2a5c; --d-ua-fill:#0e3a1f; --d-ua-stroke:#42be65;
+  }
+}
+*{box-sizing:border-box}
+html{ scroll-padding-top:72px}
+body{margin:0; background:var(--bg); color:var(--ink); font:16px/1.65 "IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif; -webkit-font-smoothing:antialiased}
+a{color:var(--accent)}
+code{font-family:"IBM Plex Mono",ui-monospace,monospace; font-size:.88em; background:var(--bg-soft); padding:.1em .35em; border-radius:4px}
+
+/* Header */
+.top{position:sticky; top:0; z-index:20; height:56px; display:flex; align-items:center; gap:12px; padding:0 20px; background:var(--header); color:var(--header-ink)}
+.top .brand{font-weight:400; letter-spacing:.01em; white-space:nowrap}
+.top .brand b{font-weight:600}
+.top .tag{margin-left:auto; font-size:13px; color:#c6c6c6; white-space:nowrap}
+.menu-btn{display:none; margin-left:auto; background:transparent; color:inherit; border:1px solid #525252; border-radius:6px; padding:6px 12px; font:inherit; font-size:14px; cursor:pointer}
+
+/* Layout */
+.wrap{display:grid; grid-template-columns:280px minmax(0,1fr); max-width:1280px; margin:0 auto}
+nav.toc{position:sticky; top:56px; align-self:start; height:calc(100vh - 56px); overflow:auto; padding:28px 16px 40px 24px; border-right:1px solid var(--border)}
+nav.toc .label{font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-3); margin:0 0 10px 8px}
+nav.toc ul{list-style:none; margin:0; padding:0}
+nav.toc li ul{margin:2px 0 8px 0}
+nav.toc a{display:block; overflow-wrap:anywhere; padding:5px 8px; border-radius:6px; color:var(--ink-2); text-decoration:none; font-size:14px; line-height:1.4; border-left:2px solid transparent}
+nav.toc > ul > li > a{font-weight:600; color:var(--ink)}
+nav.toc li li a{padding-left:20px; font-size:13.5px}
+nav.toc a:hover{background:var(--bg-soft)}
+nav.toc a.active{color:var(--accent-ink); background:var(--accent-soft); border-left-color:var(--accent)}
+
+main{padding:40px 56px 96px; max-width:900px}
+.hero{padding-bottom:28px; margin-bottom:12px; border-bottom:1px solid var(--border)}
+.hero .eyebrow{font-size:13px; text-transform:uppercase; letter-spacing:.08em; color:var(--accent); font-weight:600; margin:0 0 8px}
+.hero h1{font-size:clamp(28px,4vw,40px); line-height:1.15; font-weight:600; margin:0 0 12px; letter-spacing:-.01em}
+.hero p{margin:0; color:var(--ink-2); font-size:17px}
+.chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:18px}
+.chips span{font-size:13px; padding:4px 10px; border-radius:999px; background:var(--bg-soft); color:var(--ink-2); border:1px solid var(--border)}
+
+main h2, main h3{overflow-wrap:anywhere}
+main h2{font-size:28px; line-height:1.25; font-weight:600; margin:56px 0 14px; padding-top:8px; letter-spacing:-.005em}
+main h3{font-size:20px; line-height:1.3; font-weight:600; margin:36px 0 10px}
+main p{margin:0 0 14px}
+main ul, main ol{padding-left:24px; margin:0 0 16px}
+main li{margin:4px 0}
+blockquote{margin:20px 0; padding:14px 18px; background:var(--accent-soft); border-left:3px solid var(--accent); border-radius:0 var(--radius) var(--radius) 0; color:var(--ink)}
+blockquote p{margin:0}
+
+/* Tables */
+table{width:100%; border-collapse:collapse; margin:18px 0 22px; font-size:14.5px; display:block; overflow-x:auto}
+thead th{background:var(--bg-soft); text-align:left; font-weight:600}
+th, td{padding:10px 12px; border-bottom:1px solid var(--border); vertical-align:top}
+tbody tr:hover{background:var(--bg-soft)}
+
+/* Code blocks with copy */
+.code{position:relative; margin:10px 0 20px}
+.code pre{margin:0; background:var(--bg-code); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; padding-top:40px; overflow:auto; max-height:520px}
+.code pre code{background:none; padding:0; font-size:13.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word}
+.copy{position:absolute; top:8px; right:8px; font:500 12.5px "IBM Plex Sans",sans-serif; padding:5px 12px; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--ink); cursor:pointer}
+.copy:hover{border-color:var(--accent); color:var(--accent)}
+.copy.done{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+/* Figures */
+figure{margin:20px 0 28px}
+figure.shot a{display:block; border:1px solid var(--border); border-radius:var(--radius); overflow:hidden; background:var(--bg-soft)}
+figure.shot img{display:block; width:100%; height:auto; transition:transform .2s}
+figure.shot a:hover img{transform:scale(1.01)}
+figcaption{font-size:13.5px; color:var(--ink-2); margin-top:8px}
+figure.diagram{border:1px solid var(--border); border-radius:var(--radius); padding:12px; background:var(--bg)}
+figure.diagram svg{display:block; width:100%; height:auto}
+.d-ink{fill:var(--ink)} .d-quiet{fill:var(--ink-2)}
+.d-line{stroke:var(--d-line)} .d-arrow{fill:var(--d-line)}
+.d-box{fill:none; stroke:var(--d-line); stroke-width:1.25}
+.d-kb{fill:var(--d-kb); stroke:var(--d-line); stroke-width:1.25}
+.d-accent{fill:var(--d-accent-fill); stroke:var(--accent); stroke-width:2}
+.d-ua{fill:var(--d-ua-fill); stroke:var(--d-ua-stroke); stroke-width:1.5}
+.d-pill{fill:var(--bg); stroke:var(--d-line); stroke-width:1.25}
+.d-accent-ink{fill:var(--accent-ink)}
+/* Downloads */
+.downloads{display:flex; flex-wrap:wrap; gap:10px; margin:6px 0 20px}
+.downloads a{display:inline-flex; align-items:center; gap:8px; padding:9px 14px; border:1px solid var(--border); border-radius:var(--radius); text-decoration:none; color:var(--ink); font-weight:500; font-size:14.5px}
+.downloads a:hover{border-color:var(--accent); color:var(--accent)}
+.downloads small{color:var(--ink-3); font-weight:400}
+
+/* Checklist */
+.checklist{list-style:none; padding:0; margin:10px 0 0}
+.checklist li{margin:0}
+.checklist label{display:flex; gap:12px; align-items:flex-start; padding:10px 12px; border:1px solid var(--border); border-radius:var(--radius); margin-bottom:8px; cursor:pointer}
+.checklist input{width:18px; height:18px; margin-top:3px; accent-color:var(--accent); flex:none}
+.checklist input:checked + span{color:var(--ink-3); text-decoration:line-through}
+.progress{font-size:14px; color:var(--ink-2); margin:6px 0 10px}
+
+footer{margin-top:64px; padding-top:20px; border-top:1px solid var(--border); font-size:13px; color:var(--ink-3)}
+
+@media (max-width: 960px){
+  .wrap{grid-template-columns:minmax(0,1fr)}
+  .top .tag{display:none}
+  .menu-btn{display:inline-block}
+  nav.toc{display:none; position:fixed; top:56px; left:0; right:0; height:auto; max-height:calc(100vh - 56px); background:var(--bg); z-index:15; border-right:0; border-bottom:1px solid var(--border); padding:16px}
+  nav.toc.open{display:block}
+  main{padding:28px 16px 72px}
+}
+@media print{
+  .top, nav.toc, .copy{display:none}
+  .wrap{display:block}
+  main{padding:0; max-width:none}
+  .code pre{max-height:none}
+}
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="brand">IBM <b>watsonx Orchestrate</b> · Lab</span>
+  <span class="tag">Agentic Workflow · Document Processing</span>
+  <button class="menu-btn" type="button" aria-expanded="false" aria-controls="toc">Sumário</button>
+</header>
+<div class="wrap">
+  <nav class="toc" id="toc" aria-label="Sumário">
+    <p class="label">Neste lab</p>
+    <div class="toc">
+<ul>
+<li><a href="#visao-geral">Visão geral</a></li>
+<li><a href="#parte-1-criar-o-agente">Parte 1 — Criar o agente</a><ul>
+<li><a href="#passo-1-iniciar-a-criacao-do-agente">Passo 1 — Iniciar a criação do agente</a></li>
+<li><a href="#passo-2-criar-do-zero">Passo 2 — Criar do zero</a></li>
+<li><a href="#passo-3-nome-e-descricao-do-agente">Passo 3 — Nome e descrição do agente</a></li>
+</ul>
+</li>
+<li><a href="#parte-2-criar-o-agentic-workflow">Parte 2 — Criar o agentic workflow</a><ul>
+<li><a href="#passo-4-adicionar-uma-ferramenta">Passo 4 — Adicionar uma ferramenta</a></li>
+<li><a href="#passo-5-escolher-agentic-workflow">Passo 5 — Escolher Agentic workflow</a></li>
+<li><a href="#passo-6-dar-nome-ao-workflow">Passo 6 — Dar nome ao workflow</a></li>
+</ul>
+</li>
+<li><a href="#parte-3-definir-a-saida-do-workflow">Parte 3 — Definir a saída do workflow</a><ul>
+<li><a href="#passo-7-abrir-as-saidas-do-no-de-fim">Passo 7 — Abrir as saídas do nó de fim</a></li>
+<li><a href="#passo-8-escolher-o-tipo-string">Passo 8 — Escolher o tipo String</a></li>
+<li><a href="#passo-9-nomear-a-saida">Passo 9 — Nomear a saída</a></li>
+</ul>
+</li>
+<li><a href="#parte-4-receber-o-documento-do-usuario">Parte 4 — Receber o documento do usuário</a><ul>
+<li><a href="#passo-10-adicionar-o-primeiro-passo">Passo 10 — Adicionar o primeiro passo</a></li>
+<li><a href="#passo-11-conhecer-o-menu-de-passos-opcional">Passo 11 — Conhecer o menu de passos (opcional)</a></li>
+<li><a href="#passo-12-nos-de-processamento-de-documentos">Passo 12 — Nós de processamento de documentos</a></li>
+<li><a href="#passo-13-adicionar-o-upload-de-arquivo">Passo 13 — Adicionar o upload de arquivo</a></li>
+</ul>
+</li>
+<li><a href="#parte-5-classificar-o-documento">Parte 5 — Classificar o documento</a><ul>
+<li><a href="#passo-14-adicionar-o-document-classifier">Passo 14 — Adicionar o Document classifier</a></li>
+<li><a href="#passo-15-criar-a-classe-contract">Passo 15 — Criar a classe Contract</a></li>
+<li><a href="#passo-16-criar-a-classe-invoice-e-preparar-o-teste">Passo 16 — Criar a classe Invoice e preparar o teste</a></li>
+<li><a href="#passo-17-conferir-a-classificacao">Passo 17 — Conferir a classificação</a></li>
+</ul>
+</li>
+<li><a href="#parte-6-rotear-pelo-tipo-de-documento">Parte 6 — Rotear pelo tipo de documento</a><ul>
+<li><a href="#passo-18-adicionar-o-branch">Passo 18 — Adicionar o Branch</a></li>
+<li><a href="#passo-19-condicao-do-caminho-invoice">Passo 19 — Condição do caminho Invoice</a></li>
+</ul>
+</li>
+<li><a href="#parte-7-extrair-os-dados-da-fatura">Parte 7 — Extrair os dados da fatura</a><ul>
+<li><a href="#passo-20-adicionar-o-document-extractor-no-caminho-invoice">Passo 20 — Adicionar o Document extractor no caminho Invoice</a></li>
+<li><a href="#passo-21-escolher-o-formato-structured-para-a-fatura">Passo 21 — Escolher o formato Structured para a fatura</a></li>
+<li><a href="#passo-22-abrir-a-definicao-do-schema">Passo 22 — Abrir a definição do schema</a></li>
+<li><a href="#passo-23-usar-o-schema-predefinido-invoice">Passo 23 — Usar o schema predefinido Invoice</a></li>
+<li><a href="#passo-24-enviar-a-fatura-de-exemplo">Passo 24 — Enviar a fatura de exemplo</a></li>
+</ul>
+</li>
+<li><a href="#parte-8-extrair-os-dados-do-contrato">Parte 8 — Extrair os dados do contrato</a><ul>
+<li><a href="#passo-25-adicionar-um-passo-no-caminho-contract">Passo 25 — Adicionar um passo no caminho Contract</a></li>
+<li><a href="#passo-26-escolher-document-extractor">Passo 26 — Escolher Document extractor</a></li>
+<li><a href="#passo-27-escolher-o-formato-unstructured">Passo 27 — Escolher o formato Unstructured</a></li>
+<li><a href="#passo-28-enviar-o-contrato-de-exemplo">Passo 28 — Enviar o contrato de exemplo</a></li>
+<li><a href="#passo-29-criar-os-campos-do-contrato">Passo 29 — Criar os campos do contrato</a></li>
+<li><a href="#passo-30-conferir-e-verificar-a-extracao">Passo 30 — Conferir e verificar a extração</a></li>
+</ul>
+</li>
+<li><a href="#parte-9-mostrar-o-resultado-ao-usuario">Parte 9 — Mostrar o resultado ao usuário</a><ul>
+<li><a href="#passo-31-adicionar-uma-mensagem-no-caminho-invoice">Passo 31 — Adicionar uma mensagem no caminho Invoice</a></li>
+<li><a href="#passo-32-abrir-o-editor-da-mensagem">Passo 32 — Abrir o editor da mensagem</a></li>
+<li><a href="#passo-33-escolher-as-variaveis-da-fatura">Passo 33 — Escolher as variáveis da fatura</a></li>
+<li><a href="#passo-34-mensagem-da-fatura-pronta">Passo 34 — Mensagem da fatura pronta</a></li>
+<li><a href="#passo-35-adicionar-uma-mensagem-no-caminho-contract">Passo 35 — Adicionar uma mensagem no caminho Contract</a></li>
+<li><a href="#passo-36-abrir-o-editor-da-segunda-mensagem">Passo 36 — Abrir o editor da segunda mensagem</a></li>
+<li><a href="#passo-37-escolher-as-variaveis-do-contrato">Passo 37 — Escolher as variáveis do contrato</a></li>
+<li><a href="#passo-38-mensagem-do-contrato-pronta">Passo 38 — Mensagem do contrato pronta</a></li>
+</ul>
+</li>
+<li><a href="#parte-10-salvar-o-workflow">Parte 10 — Salvar o workflow</a><ul>
+<li><a href="#passo-39-conferir-o-fluxo-e-clicar-em-done">Passo 39 — Conferir o fluxo e clicar em Done</a></li>
+<li><a href="#passo-40-de-volta-ao-agente">Passo 40 — De volta ao agente</a></li>
+</ul>
+</li>
+<li><a href="#parte-11-instruir-e-testar-o-agente">Parte 11 — Instruir e testar o agente</a><ul>
+<li><a href="#passo-41-escrever-a-instrucao-do-agente">Passo 41 — Escrever a instrução do agente</a></li>
+<li><a href="#passo-42-iniciar-o-teste-no-draft-preview">Passo 42 — Iniciar o teste no Draft Preview</a></li>
+<li><a href="#passo-43-o-workflow-pede-o-arquivo">Passo 43 — O workflow pede o arquivo</a></li>
+<li><a href="#passo-44-enviar-a-fatura">Passo 44 — Enviar a fatura</a></li>
+<li><a href="#passo-45-revisar-a-extracao">Passo 45 — Revisar a extração</a></li>
+</ul>
+</li>
+<li><a href="#conclusao-e-proximos-testes">Conclusão e próximos testes</a></li>
+<li><a href="#problemas-comuns-e-checklist">Problemas comuns e checklist</a></li>
+</ul>
+</div>
+
+  </nav>
+  <main>
+    <section class="hero">
+      <p class="eyebrow">Lab prático · Agentic workflow</p>
+      <h1>Lab 3 — Classificar documentos e extrair dados com um Agentic Workflow</h1>
+      <p>Crie um agente que recebe um PDF no chat, identifica se é um contrato ou uma fatura e extrai os campos principais de cada um, usando um agentic workflow com classificador e extratores de documentos.</p>
+      <div class="chips"><span>45–60 min</span><span>Intermediário</span><span>1 agente + 1 workflow</span><span>46 capturas de tela</span></div>
+    </section>
+    <h2 id="visao-geral">Visão geral</h2>
+<p>Ao final deste lab, cada aluno terá um agente no watsonx Orchestrate que recebe um PDF no chat, identifica se é um contrato ou uma fatura e devolve os campos principais de cada um. Duração estimada: 45 a 60 minutos, tudo pela interface gráfica. Nível: intermediário.</p>
+<p><strong>Cenário:</strong> uma empresa de serviços financeiros recebe toda semana dezenas de contratos e faturas. Hoje alguém abre cada arquivo e copia à mão as partes do contrato, os dados da fatura e o endereço de cobrança. O agente deste lab faz essa triagem e a extração na própria conversa.</p>
+<p><strong>A ideia central:</strong> o agente não processa o documento sozinho. Ele chama uma ferramenta do tipo <strong>Agentic workflow</strong>, um fluxo low-code que pede o arquivo ao usuário, classifica, escolhe o caminho e extrai os dados.</p>
+<figure class="diagram">
+<svg viewBox="0 0 870 312" role="img" aria-label="Um upload, uma classificação e um extrator por tipo de documento" font-size="13">
+  <defs><marker id="arq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z" class="d-arrow"/></marker></defs>
+  <text x="24" y="30" font-size="15" font-weight="600" class="d-ink">Um upload, uma classificação e um extrator por tipo de documento</text>
+  <g class="d-line" fill="none" stroke-width="1.25">
+    <path d="M76 180H100" marker-end="url(#arq-arrow)"/>
+    <path d="M230 180H254" marker-end="url(#arq-arrow)"/>
+    <path d="M384 180H408"/>
+    <path d="M434 154V100H500" marker-end="url(#arq-arrow)"/>
+    <path d="M434 206V260H500" marker-end="url(#arq-arrow)"/>
+    <path d="M650 100H672" marker-end="url(#arq-arrow)"/>
+    <path d="M650 260H672" marker-end="url(#arq-arrow)"/>
+    <path d="M796 100H826V164" marker-end="url(#arq-arrow)"/>
+    <path d="M796 260H826V196" marker-end="url(#arq-arrow)"/>
+  </g>
+  <rect x="16" y="164" width="60" height="32" rx="16" class="d-pill"/>
+  <text x="46" y="184" text-anchor="middle" font-weight="600" class="d-ink">Start</text>
+  <rect x="100" y="152" width="130" height="56" rx="8" class="d-ua"/><text x="165.0" y="176" text-anchor="middle" font-weight="600" class="d-ink">User activity</text><text x="165.0" y="194" text-anchor="middle" font-size="11.5" class="d-quiet">File upload</text>
+  <rect x="254" y="152" width="130" height="56" rx="8" class="d-box"/><text x="319.0" y="176" text-anchor="middle" font-weight="600" class="d-ink">Doc. classifier</text><text x="319.0" y="194" text-anchor="middle" font-size="11.5" class="d-quiet">Contract · Invoice</text>
+  <polygon points="408,180 434,154 460,180 434,206" class="d-accent"/>
+  <text x="470" y="184" font-size="11.5" font-weight="600" class="d-accent-ink">Document type</text>
+  <text x="426" y="124" text-anchor="end" font-size="11.5" font-weight="600" class="d-accent-ink">Invoice</text>
+  <text x="426" y="244" text-anchor="end" font-size="11.5" font-weight="600" class="d-accent-ink">Contract (default)</text>
+  <rect x="500" y="72" width="150" height="56" rx="8" class="d-box"/><text x="575.0" y="96" text-anchor="middle" font-weight="600" class="d-ink">Invoice extractor</text><text x="575.0" y="114" text-anchor="middle" font-size="11.5" class="d-quiet">Structured</text>
+  <rect x="500" y="232" width="150" height="56" rx="8" class="d-box"/><text x="575.0" y="256" text-anchor="middle" font-weight="600" class="d-ink">Contract extractor</text><text x="575.0" y="274" text-anchor="middle" font-size="11.5" class="d-quiet">Unstructured</text>
+  <rect x="672" y="72" width="124" height="56" rx="8" class="d-ua"/><text x="734.0" y="96" text-anchor="middle" font-weight="600" class="d-ink">Display to user</text><text x="734.0" y="114" text-anchor="middle" font-size="11.5" class="d-quiet">Message</text>
+  <rect x="672" y="232" width="124" height="56" rx="8" class="d-ua"/><text x="734.0" y="256" text-anchor="middle" font-weight="600" class="d-ink">Display to user</text><text x="734.0" y="274" text-anchor="middle" font-size="11.5" class="d-quiet">Message</text>
+  <rect x="800" y="164" width="52" height="32" rx="16" class="d-pill"/>
+  <text x="826" y="184" text-anchor="middle" font-weight="600" class="d-ink">End</text>
+  <text x="792" y="184" text-anchor="end" font-size="11.5" class="d-quiet">saída: Class_name</text>
+</svg>
+<figcaption>Fluxo que você vai construir · Start → upload → classificação → caminho por tipo → extração → mensagem → End. Caixas verdes são interações com o usuário no chat.</figcaption>
+</figure>
+
+<p>O workflow não tem input: o arquivo chega pela conversa. A saída é o tipo do documento (<code>Class_name</code>).</p>
+<table>
+<thead>
+<tr>
+<th>Componente</th>
+<th>O que faz</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Document processing agent</td>
+<td>Agente que conversa com o usuário e chama o workflow</td>
+</tr>
+<tr>
+<td>User activity · File upload</td>
+<td>Pede o arquivo ao usuário durante o chat</td>
+</tr>
+<tr>
+<td>Document classifier</td>
+<td>Decide se o arquivo é <code>Contract</code> ou <code>Invoice</code></td>
+</tr>
+<tr>
+<td>Branch · Document type</td>
+<td>Envia o fluxo para o extrator certo</td>
+</tr>
+<tr>
+<td>Invoice extractor</td>
+<td>Extrator <strong>Structured</strong> com o schema predefinido Invoice (invoice_id, invoice_date, cliente, endereço de cobrança, fornecedor)</td>
+</tr>
+<tr>
+<td>Contract extractor</td>
+<td>Extrator <strong>Unstructured</strong> com campos criados à mão: Buyer, Supplier e, opcionalmente, Effective date</td>
+</tr>
+<tr>
+<td>User activity · Message</td>
+<td>Mostra ao usuário os campos extraídos</td>
+</tr>
+<tr>
+<td>End</td>
+<td>Devolve o tipo do documento (<code>Class_name</code>) como saída do workflow</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Pré-requisitos</strong></p>
+<ul>
+<li>Acesso ao watsonx Orchestrate (SaaS), com permissão para criar agentes (a conta trial serve).</li>
+<li>Os arquivos de teste, todos fictícios. Baixe e salve no seu computador:</li>
+</ul>
+<div class="downloads"><a href="files/Contract.pdf" download>&#8595; Contract.pdf <small>contrato, 2 páginas</small></a><a href="files/Invoice.pdf" download>&#8595; Invoice.pdf <small>fatura, 1 página</small></a></div>
+
+<p><strong>Resultados esperados com os arquivos de teste</strong></p>
+<table>
+<thead>
+<tr>
+<th>Arquivo</th>
+<th>Classe esperada</th>
+<th>Campos e valores esperados</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Contract.pdf</td>
+<td>Contract</td>
+<td>Buyer: Alfa Comércio S.A. · Supplier: Beta Serviços Ltda. · Effective date: March 1, 2026</td>
+</tr>
+<tr>
+<td>Invoice.pdf</td>
+<td>Invoice</td>
+<td>Invoice id: INV-1042 · Invoice date: April 30, 2026 · Customer (Bill to): Alfa Comércio S.A. · Vendor: Beta Serviços Ltda.</td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>O lab também cita um terceiro arquivo, <code>Invoice_2.pdf</code> (fatura de outro fornecedor e layout), usado só no teste final. Ele é opcional e entregue pelo instrutor.</p>
+</blockquote>
+<h2 id="parte-1-criar-o-agente">Parte 1 — Criar o agente</h2>
+<h3 id="passo-1-iniciar-a-criacao-do-agente">Passo 1 — Iniciar a criação do agente</h3>
+<p>Na página inicial do watsonx Orchestrate, clique em <strong>Create agent</strong>, no canto superior direito.</p>
+<figure class="shot"><a href="images/fig-01.png" target="_blank" rel="noopener"><img src="images/fig-01.png" alt="Página inicial com o botão Create agent destacado" loading="lazy"></a><figcaption>Figura 1 — Iniciar a criação do agente.</figcaption></figure>
+
+<h3 id="passo-2-criar-do-zero">Passo 2 — Criar do zero</h3>
+<p>Na janela <strong>Create an agent</strong>, em <em>Other ways to start</em>, clique em <strong>Create from scratch</strong>.</p>
+<figure class="shot"><a href="images/fig-02.png" target="_blank" rel="noopener"><img src="images/fig-02.png" alt="Janela Create an agent com Create from scratch destacado" loading="lazy"></a><figcaption>Figura 2 — Criar do zero.</figcaption></figure>
+
+<h3 id="passo-3-nome-e-descricao-do-agente">Passo 3 — Nome e descrição do agente</h3>
+<p>O agente abre na aba <strong>Behavior</strong>. Em <em>Profile</em>, preencha:</p>
+<ol>
+<li><strong>Agent name:</strong> <code>Document processing agent</code></li>
+<li><strong>Description:</strong> cole o texto abaixo.</li>
+</ol>
+<div class="code"><button class="copy" type="button">Copiar</button><pre><code class="language-text">This agent is able to classify documents and extract core fields to retrieve
+</code></pre></div>
+<p>Mantenha o modelo padrão (na captura, <strong>GPT-OSS 120B — OpenAI (via Groq)</strong>). O painel <strong>Draft Preview</strong>, à direita, será usado no teste final.</p>
+<figure class="shot"><a href="images/fig-03.png" target="_blank" rel="noopener"><img src="images/fig-03.png" alt="Aba Behavior com Agent name e Description preenchidos" loading="lazy"></a><figcaption>Figura 3 — Nome e descrição do agente.</figcaption></figure>
+
+<h2 id="parte-2-criar-o-agentic-workflow">Parte 2 — Criar o agentic workflow</h2>
+<h3 id="passo-4-adicionar-uma-ferramenta">Passo 4 — Adicionar uma ferramenta</h3>
+<p>Clique na aba <strong>Tools</strong> e depois em <strong>Add Tool +</strong>.</p>
+<figure class="shot"><a href="images/fig-04.png" target="_blank" rel="noopener"><img src="images/fig-04.png" alt="Aba Tools com o botão Add Tool destacado" loading="lazy"></a><figcaption>Figura 4 — Adicionar uma ferramenta.</figcaption></figure>
+
+<h3 id="passo-5-escolher-agentic-workflow">Passo 5 — Escolher Agentic workflow</h3>
+<p>Na janela <strong>Add a tool</strong>, em <em>Create</em>, clique no cartão <strong>Agentic workflow</strong> (<strong>Start Building</strong>).</p>
+<figure class="shot"><a href="images/fig-05.png" target="_blank" rel="noopener"><img src="images/fig-05.png" alt="Janela Add a tool com o cartão Agentic workflow destacado" loading="lazy"></a><figcaption>Figura 5 — Escolher Agentic workflow.</figcaption></figure>
+
+<h3 id="passo-6-dar-nome-ao-workflow">Passo 6 — Dar nome ao workflow</h3>
+<p>Em <strong>Name your agentic workflow</strong>, digite <code>Document processing</code> e clique em <strong>Start building</strong>.</p>
+<p>O editor abre com o nó de início (<strong>0 inputs</strong>), um espaço <strong>Add your first step +</strong> e o nó de fim.</p>
+<figure class="shot"><a href="images/fig-06.png" target="_blank" rel="noopener"><img src="images/fig-06.png" alt="Janela Name your agentic workflow com o nome Document processing" loading="lazy"></a><figcaption>Figura 6 — Dar nome ao workflow.</figcaption></figure>
+
+<h2 id="parte-3-definir-a-saida-do-workflow">Parte 3 — Definir a saída do workflow</h2>
+<blockquote>
+<p><strong>Nota:</strong> o workflow não precisa de input, porque o arquivo chega pela conversa, numa user activity. A saída será o tipo do documento identificado pelo classificador.</p>
+</blockquote>
+<h3 id="passo-7-abrir-as-saidas-do-no-de-fim">Passo 7 — Abrir as saídas do nó de fim</h3>
+<p>Clique no nó de fim (<strong>0 outputs</strong>). No painel <strong>Outputs</strong>, clique em <strong>Add +</strong>.</p>
+<figure class="shot"><a href="images/fig-07.png" target="_blank" rel="noopener"><img src="images/fig-07.png" alt="Nó de fim com 0 outputs e o painel Outputs com o botão Add" loading="lazy"></a><figcaption>Figura 7 — Abrir as saídas do nó de fim.</figcaption></figure>
+
+<h3 id="passo-8-escolher-o-tipo-string">Passo 8 — Escolher o tipo String</h3>
+<p>Na lista de tipos, escolha <strong>String</strong>.</p>
+<figure class="shot"><a href="images/fig-08.png" target="_blank" rel="noopener"><img src="images/fig-08.png" alt="Lista de tipos de saída com String destacado" loading="lazy"></a><figcaption>Figura 8 — Escolher o tipo String.</figcaption></figure>
+
+<h3 id="passo-9-nomear-a-saida">Passo 9 — Nomear a saída</h3>
+<p>Em <strong>Add string output</strong>, digite <code>Class_name</code> no campo <strong>Name</strong> e clique em <strong>Add</strong>.</p>
+<figure class="shot"><a href="images/fig-09.png" target="_blank" rel="noopener"><img src="images/fig-09.png" alt="Janela Add string output com o nome Class_name" loading="lazy"></a><figcaption>Figura 9 — Nomear a saída.</figcaption></figure>
+
+<h2 id="parte-4-receber-o-documento-do-usuario">Parte 4 — Receber o documento do usuário</h2>
+<h3 id="passo-10-adicionar-o-primeiro-passo">Passo 10 — Adicionar o primeiro passo</h3>
+<p>O nó de fim agora mostra <strong>1 output</strong>. Clique em <strong>Add your first step +</strong>.</p>
+<figure class="shot"><a href="images/fig-10.png" target="_blank" rel="noopener"><img src="images/fig-10.png" alt="Canvas com Add your first step destacado e o nó de fim com 1 output" loading="lazy"></a><figcaption>Figura 10 — Adicionar o primeiro passo.</figcaption></figure>
+
+<h3 id="passo-11-conhecer-o-menu-de-passos-opcional">Passo 11 — Conhecer o menu de passos (opcional)</h3>
+<p>O menu mostra os tipos de passo disponíveis:</p>
+<ul>
+<li><strong>Add a flow activity:</strong> classificador, extrator, AI Task e outros nós de processamento.</li>
+<li><strong>Add a flow control:</strong> Branch, For each, Loop e Parallel.</li>
+<li><strong>Call a tool</strong> e <strong>Call an agent:</strong> chamam ferramentas e agentes existentes.</li>
+<li><strong>User activities:</strong> interações com o usuário no chat (<strong>Collect from user</strong> para coletar e <strong>Present to user</strong> para apresentar dados).</li>
+</ul>
+<figure class="shot"><a href="images/fig-11.png" target="_blank" rel="noopener"><img src="images/fig-11.png" alt="Menu de passos aberto a partir de Add your first step" loading="lazy"></a><figcaption>Figura 11 — Conhecer o menu de passos.</figcaption></figure>
+
+<h3 id="passo-12-nos-de-processamento-de-documentos">Passo 12 — Nós de processamento de documentos (opcional)</h3>
+<p>Em <strong>Add a flow activity</strong> ficam os nós usados neste lab: <strong>Document classifier</strong> e <strong>Document extractor</strong>. Não clique agora; primeiro vamos pedir o arquivo ao usuário.</p>
+<figure class="shot"><a href="images/fig-12.png" target="_blank" rel="noopener"><img src="images/fig-12.png" alt="Submenu Add a flow activity com Document classifier e Document extractor" loading="lazy"></a><figcaption>Figura 12 — Nós de processamento de documentos.</figcaption></figure>
+
+<h3 id="passo-13-adicionar-o-upload-de-arquivo">Passo 13 — Adicionar o upload de arquivo</h3>
+<p>Em <em>User activities</em>, passe o mouse sobre <strong>Collect from user</strong> e clique em <strong>File upload</strong>.</p>
+<p>Aparece uma caixa verde (<strong>User activity 1</strong>, atribuída ao <em>Flow initiator</em>) com o passo <strong>File upload 1</strong> dentro.</p>
+<figure class="shot"><a href="images/fig-13.png" target="_blank" rel="noopener"><img src="images/fig-13.png" alt="Submenu Collect from user com File upload destacado" loading="lazy"></a><figcaption>Figura 13 — Adicionar o upload de arquivo.</figcaption></figure>
+
+<h2 id="parte-5-classificar-o-documento">Parte 5 — Classificar o documento</h2>
+<h3 id="passo-14-adicionar-o-document-classifier">Passo 14 — Adicionar o Document classifier</h3>
+<p>Clique no <strong>+</strong> da linha logo depois da caixa verde do File upload. Escolha <strong>Add a flow activity</strong> e depois <strong>Document classifier</strong>.</p>
+<figure class="shot"><a href="images/fig-14.png" target="_blank" rel="noopener"><img src="images/fig-14.png" alt="Menu Add a flow activity com Document classifier destacado" loading="lazy"></a><figcaption>Figura 14 — Adicionar o Document classifier.</figcaption></figure>
+
+
+<h3 id="passo-15-criar-a-classe-contract">Passo 15 — Criar a classe Contract</h3>
+<ol>
+<li>Selecione o nó <strong>Document classifier</strong>. No painel, ao lado de <strong>Classes</strong>, clique no <strong>lápis</strong> (Edit). A tela avisa <em>No custom classes defined yet</em>.</li>
+<li>No painel <strong>Classes</strong>, a classe <strong>Other</strong> já existe por padrão; ela recebe os documentos que não se encaixam em nenhuma classe.</li>
+<li>Clique em <strong>Add class</strong> e digite <code>Contract</code>.</li>
+</ol>
+<p>Repare também em <strong>User Review</strong>, ligado por padrão: se um documento for classificado como <em>Other</em>, ele é enviado ao <em>flow initiator</em> para revisão.</p>
+<figure class="shot"><a href="images/fig-15.png" target="_blank" rel="noopener"><img src="images/fig-15.png" alt="Painel do Document classifier com o lápis de edição de Classes destacado" loading="lazy"></a><figcaption>Figura 15 — Selecionar o classificador e editar as classes.</figcaption></figure>
+
+<figure class="shot"><a href="images/fig-16.png" target="_blank" rel="noopener"><img src="images/fig-16.png" alt="Painel Classes com Other e a nova classe Contract" loading="lazy"></a><figcaption>Figura 16 — Criar a classe Contract.</figcaption></figure>
+
+<h3 id="passo-16-criar-a-classe-invoice-e-preparar-o-teste">Passo 16 — Criar a classe Invoice e preparar o teste</h3>
+<p>Clique em <strong>Add class</strong> de novo e digite <code>Invoice</code>. O painel passa a mostrar <strong>Classes (3)</strong>.</p>
+<p>Em <strong>Test classifier</strong>, clique na área <strong>Drag and drop files here or click to upload</strong>. É possível enviar até 5 documentos de exemplo, de até 10 MB cada.</p>
+<figure class="shot"><a href="images/fig-17.png" target="_blank" rel="noopener"><img src="images/fig-17.png" alt="Classes (3) com Other, Contract e Invoice e a área de upload do Test classifier" loading="lazy"></a><figcaption>Figura 17 — Criar a classe Invoice e preparar o teste.</figcaption></figure>
+
+<h3 id="passo-17-conferir-a-classificacao">Passo 17 — Conferir a classificação</h3>
+<p>Envie <code>Contract.pdf</code> e <code>Invoice.pdf</code>. Em <strong>Predicted results</strong>, confira se cada arquivo recebeu a classe certa: <code>Contract.pdf</code> como <strong>Contract</strong> e <code>Invoice.pdf</code> como <strong>Invoice</strong>.</p>
+<figure class="shot"><a href="images/fig-18.png" target="_blank" rel="noopener"><img src="images/fig-18.png" alt="Predicted results com Contract.pdf classificado como Contract e Invoice.pdf como Invoice" loading="lazy"></a><figcaption>Figura 18 — Conferir a classificação.</figcaption></figure>
+
+<h2 id="parte-6-rotear-pelo-tipo-de-documento">Parte 6 — Rotear pelo tipo de documento</h2>
+<h3 id="passo-18-adicionar-o-branch">Passo 18 — Adicionar o Branch</h3>
+<p>Clique no <strong>+</strong> da linha logo abaixo do Document classifier. Escolha <strong>Add a flow control</strong> e depois <strong>Branch</strong>. O branch é criado com dois caminhos (<strong>Path 1</strong> e <strong>Path 2</strong>).</p>
+<figure class="shot"><a href="images/fig-19.png" target="_blank" rel="noopener"><img src="images/fig-19.png" alt="Submenu Add a flow control com Branch destacado" loading="lazy"></a><figcaption>Figura 19 — Adicionar o Branch.</figcaption></figure>
+
+<h3 id="passo-19-condicao-do-caminho-invoice">Passo 19 — Condição do caminho Invoice</h3>
+<p>Clique no nó <strong>Branch 1</strong> e abra o <strong>Path 1</strong>. Monte a condição:</p>
+<table>
+<thead>
+<tr>
+<th>Campo</th>
+<th>Valor</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Variável</td>
+<td><code>class_name</code> (saída do Document classifier)</td>
+</tr>
+<tr>
+<td>Operador</td>
+<td><code>==</code></td>
+</tr>
+<tr>
+<td>Valor</td>
+<td><code>Invoice</code></td>
+</tr>
+</tbody>
+</table>
+<p>Renomeie o Path 1 para <code>Invoice</code> pelo lápis ao lado do nome. O Path 2 fica sem condição e recebe os contratos; renomeie-o para <code>Contract</code>. No canvas ele aparece como <strong>Contract (default)</strong>.</p>
+<figure class="shot"><a href="images/fig-20.png" target="_blank" rel="noopener"><img src="images/fig-20.png" alt="Path 1 com a condição class_name igual a Invoice" loading="lazy"></a><figcaption>Figura 20 — Condição do caminho Invoice.</figcaption></figure>
+
+<blockquote>
+<p><strong>Atenção:</strong> a comparação é exata. O valor precisa ser escrito igual ao nome da classe, com o I maiúsculo.</p>
+</blockquote>
+<h2 id="parte-7-extrair-os-dados-da-fatura">Parte 7 — Extrair os dados da fatura</h2>
+<h3 id="passo-20-adicionar-o-document-extractor-no-caminho-invoice">Passo 20 — Adicionar o Document extractor no caminho Invoice</h3>
+<p>Clique no <strong>+</strong> da linha do caminho <strong>Invoice</strong>. Escolha <strong>Add a flow activity</strong> e depois <strong>Document extractor</strong>.</p>
+<figure class="shot"><a href="images/fig-21.png" target="_blank" rel="noopener"><img src="images/fig-21.png" alt="Menu Add a flow activity com Document extractor destacado no caminho Invoice" loading="lazy"></a><figcaption>Figura 21 — Adicionar o Document extractor no caminho Invoice.</figcaption></figure>
+
+<h3 id="passo-21-escolher-o-formato-structured-para-a-fatura">Passo 21 — Escolher o formato Structured para a fatura</h3>
+<p>Em <strong>Select a document format</strong>, escolha <strong>Structured</strong>. Esse formato serve para documentos com layout parecido entre si, como faturas, formulários fiscais e documentos de identidade.</p>
+<figure class="shot"><a href="images/fig-22.png" target="_blank" rel="noopener"><img src="images/fig-22.png" alt="Select a document format com Structured destacado" loading="lazy"></a><figcaption>Figura 22 — Escolher o formato Structured para a fatura.</figcaption></figure>
+
+<h3 id="passo-22-abrir-a-definicao-do-schema">Passo 22 — Abrir a definição do schema</h3>
+<p>A tela do <strong>Document extractor</strong> abre com duas opções: <strong>Define schema</strong>, para escolher os campos, e <strong>Upload files</strong>, para enviar documentos de exemplo. No canto superior direito ficam o modelo usado (na captura, <code>mistral-small-3-1-24b-instruct-2503</code>) e o idioma.</p>
+<ol>
+<li>Renomeie o extrator: clique no título <strong>Document extractor</strong> e digite <code>Invoice extractor</code>.</li>
+<li>Clique em <strong>Define schema</strong>.</li>
+</ol>
+<figure class="shot"><a href="images/fig-23.png" target="_blank" rel="noopener"><img src="images/fig-23.png" alt="Tela do Document extractor com Define schema e Upload files destacados" loading="lazy"></a><figcaption>Figura 23 — Abrir a definição do schema.</figcaption></figure>
+
+<blockquote>
+<p><strong>Atenção:</strong> nas capturas os dois extratores ficaram com o mesmo nome, <em>Document extractor</em>, o que dificulta escolher as variáveis certas mais adiante. Renomear agora evita esse problema.</p>
+</blockquote>
+<h3 id="passo-23-usar-o-schema-predefinido-invoice">Passo 23 — Usar o schema predefinido Invoice</h3>
+<p>Na lista de schemas predefinidos, selecione <strong>Invoice</strong>. A tabela à direita mostra os campos que ele já traz, com descrição, tipo e exemplo:</p>
+<ul>
+<li><strong>Invoice date</strong> e <strong>Invoice id</strong></li>
+<li><strong>Customer name</strong> e <strong>Customer billing address</strong> (equivale ao <em>Bill to</em>)</li>
+<li><strong>Customer email</strong>, <strong>Customer phone</strong>, dados de entrega e <strong>Vendor name</strong></li>
+</ul>
+<p>Clique em <strong>Create</strong>.</p>
+<figure class="shot"><a href="images/fig-24.png" target="_blank" rel="noopener"><img src="images/fig-24.png" alt="Lista de schemas predefinidos com Invoice selecionado e a tabela de campos" loading="lazy"></a><figcaption>Figura 24 — Usar o schema predefinido Invoice.</figcaption></figure>
+
+<h3 id="passo-24-enviar-a-fatura-de-exemplo">Passo 24 — Enviar a fatura de exemplo</h3>
+<p>Clique em <strong>Upload files</strong> e escolha <code>Invoice.pdf</code>. Depois do processamento, confira os valores extraídos de cada campo com a tabela de resultados esperados e clique em <strong>Verify document</strong> para registrar que estão corretos.</p>
+<figure class="shot"><a href="images/fig-25.png" target="_blank" rel="noopener"><img src="images/fig-25.png" alt="Seletor de arquivos com Invoice.pdf destacado" loading="lazy"></a><figcaption>Figura 25 — Enviar a fatura de exemplo.</figcaption></figure>
+
+<h2 id="parte-8-extrair-os-dados-do-contrato">Parte 8 — Extrair os dados do contrato</h2>
+<h3 id="passo-25-adicionar-um-passo-no-caminho-contract">Passo 25 — Adicionar um passo no caminho Contract</h3>
+<p>Volte ao canvas. O caminho <strong>Contract (default)</strong> ainda está vazio. Clique em <strong>Add +</strong> nesse caminho.</p>
+<figure class="shot"><a href="images/fig-26.png" target="_blank" rel="noopener"><img src="images/fig-26.png" alt="Canvas com o caminho Contract (default) vazio e o botão Add destacado" loading="lazy"></a><figcaption>Figura 26 — Adicionar um passo no caminho Contract.</figcaption></figure>
+
+<h3 id="passo-26-escolher-document-extractor">Passo 26 — Escolher Document extractor</h3>
+<p>Escolha <strong>Add a flow activity</strong> e depois <strong>Document extractor</strong>.</p>
+<figure class="shot"><a href="images/fig-27.png" target="_blank" rel="noopener"><img src="images/fig-27.png" alt="Menu Add a flow activity com Document extractor destacado no caminho Contract" loading="lazy"></a><figcaption>Figura 27 — Escolher Document extractor.</figcaption></figure>
+
+<h3 id="passo-27-escolher-o-formato-unstructured">Passo 27 — Escolher o formato Unstructured</h3>
+<p>Em <strong>Select a document format</strong>, escolha <strong>Unstructured</strong>, indicado para documentos sem layout fixo, como contratos, relatórios e e-mails.</p>
+<figure class="shot"><a href="images/fig-28.png" target="_blank" rel="noopener"><img src="images/fig-28.png" alt="Select a document format com Unstructured destacado" loading="lazy"></a><figcaption>Figura 28 — Escolher o formato Unstructured.</figcaption></figure>
+
+<h3 id="passo-28-enviar-o-contrato-de-exemplo">Passo 28 — Enviar o contrato de exemplo</h3>
+<p>No extrator não estruturado, a esquerda fica vazia até você criar os campos.</p>
+<ol>
+<li>Renomeie o extrator para <code>Contract extractor</code> (clique no título).</li>
+<li>Clique em <strong>Upload files</strong> e envie <code>Contract.pdf</code>.</li>
+</ol>
+<p>Na captura, o modelo padrão foi <code>llama-4-maverick-17b-128e-instruct</code>.</p>
+<figure class="shot"><a href="images/fig-29.png" target="_blank" rel="noopener"><img src="images/fig-29.png" alt="Extrator não estruturado com o botão Upload files destacado" loading="lazy"></a><figcaption>Figura 29 — Enviar o contrato de exemplo.</figcaption></figure>
+
+<h3 id="passo-29-criar-os-campos-do-contrato">Passo 29 — Criar os campos do contrato</h3>
+<p>O contrato aparece no visualizador à direita. Em <strong>Define your schema</strong>, clique em <strong>Add field</strong> para cada campo que quer extrair.</p>
+<figure class="shot"><a href="images/fig-30.png" target="_blank" rel="noopener"><img src="images/fig-30.png" alt="Contract.pdf no visualizador e o botão Add field destacado" loading="lazy"></a><figcaption>Figura 30 — Criar os campos do contrato.</figcaption></figure>
+
+<h3 id="passo-30-conferir-e-verificar-a-extracao">Passo 30 — Conferir e verificar a extração</h3>
+<p>Crie os campos <code>Buyer</code> e <code>Supplier</code>. Para cada um, a tabela mostra o <strong>Extracted Value</strong>, encontrado pelo modelo, e o <strong>Correct Value</strong>, que você pode corrigir:</p>
+<table>
+<thead>
+<tr>
+<th>Campo</th>
+<th>Valor esperado</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Buyer</td>
+<td>Alfa Comércio S.A.</td>
+</tr>
+<tr>
+<td>Supplier</td>
+<td>Beta Serviços Ltda.</td>
+</tr>
+<tr>
+<td>Effective date (opcional)</td>
+<td>March 1, 2026</td>
+</tr>
+</tbody>
+</table>
+<p>Com os valores conferidos, clique em <strong>Verify document</strong>. O documento deixa de ser <em>Unverified</em> e entra na métrica de acurácia (<strong>Metrics Summary</strong>).</p>
+<figure class="shot"><a href="images/fig-31.png" target="_blank" rel="noopener"><img src="images/fig-31.png" alt="Campos supplier e Buyer com valores extraídos e o documento Unverified" loading="lazy"></a><figcaption>Figura 31 — Conferir e verificar a extração.</figcaption></figure>
+
+<blockquote>
+<p><strong>Atenção:</strong> padronize a grafia dos campos (por exemplo, <code>Buyer</code> e <code>Supplier</code>). O nome do campo vira o nome da variável que você vai usar nas mensagens; no seletor de variáveis ele aparece em minúsculas (<code>buyer</code>, <code>supplier</code>).</p>
+</blockquote>
+<h2 id="parte-9-mostrar-o-resultado-ao-usuario">Parte 9 — Mostrar o resultado ao usuário</h2>
+<h3 id="passo-31-adicionar-uma-mensagem-no-caminho-invoice">Passo 31 — Adicionar uma mensagem no caminho Invoice</h3>
+<p>Clique no <strong>+</strong> da linha logo abaixo do extrator do caminho <strong>Invoice</strong>. Escolha <strong>Present to user</strong> e depois <strong>Message</strong>. É criada uma nova user activity (<strong>User activity 2</strong>) com o passo <strong>Message 1</strong>.</p>
+<figure class="shot"><a href="images/fig-32.png" target="_blank" rel="noopener"><img src="images/fig-32.png" alt="Submenu Present to user com Message destacado no caminho Invoice" loading="lazy"></a><figcaption>Figura 32 — Adicionar uma mensagem no caminho Invoice.</figcaption></figure>
+
+<h3 id="passo-32-abrir-o-editor-da-mensagem">Passo 32 — Abrir o editor da mensagem</h3>
+<p>Selecione <strong>Message 1</strong>. No painel, em <strong>Agent message</strong>, fica o texto que o agente mostra no chat. Clique no ícone <strong>{x}</strong> para inserir variáveis.</p>
+<figure class="shot"><a href="images/fig-33.png" target="_blank" rel="noopener"><img src="images/fig-33.png" alt="Painel de Message 1 com o ícone de variáveis destacado" loading="lazy"></a><figcaption>Figura 33 — Abrir o editor da mensagem.</figcaption></figure>
+
+<h3 id="passo-33-escolher-as-variaveis-da-fatura">Passo 33 — Escolher as variáveis da fatura</h3>
+<p>No seletor de variáveis, clique no extrator da fatura (<strong>Invoice extractor</strong>; na captura, <strong>Document ex...</strong>) e escolha os campos que quer mostrar. Aqui foram usados <code>invoice_id</code> e <code>invoice_date</code>. O mesmo seletor também mostra campos como <code>due_date</code>, <code>iban</code> e <code>line_items</code>.</p>
+<figure class="shot"><a href="images/fig-34.png" target="_blank" rel="noopener"><img src="images/fig-34.png" alt="Seletor de variáveis com invoice_date e invoice_id destacados" loading="lazy"></a><figcaption>Figura 34 — Escolher as variáveis da fatura.</figcaption></figure>
+
+<h3 id="passo-34-mensagem-da-fatura-pronta">Passo 34 — Mensagem da fatura pronta</h3>
+<p>As variáveis aparecem como etiquetas dentro de <strong>Agent message</strong>.</p>
+<figure class="shot"><a href="images/fig-35.png" target="_blank" rel="noopener"><img src="images/fig-35.png" alt="Agent message com as etiquetas invoice_id e invoice_date" loading="lazy"></a><figcaption>Figura 35 — Mensagem da fatura pronta.</figcaption></figure>
+
+<blockquote>
+<p><strong>Dica:</strong> escreva um texto em volta das variáveis para a resposta ficar legível, por exemplo: <em>Fatura <code>invoice_id</code> emitida em <code>invoice_date</code>, cobrada de <code>customer_name</code>.</em></p>
+</blockquote>
+<h3 id="passo-35-adicionar-uma-mensagem-no-caminho-contract">Passo 35 — Adicionar uma mensagem no caminho Contract</h3>
+<p>Repita no caminho <strong>Contract</strong>: clique no <strong>+</strong> abaixo do extrator do contrato, escolha <strong>Present to user</strong> e depois <strong>Message</strong>.</p>
+<figure class="shot"><a href="images/fig-36.png" target="_blank" rel="noopener"><img src="images/fig-36.png" alt="Submenu Present to user com Message no caminho Contract" loading="lazy"></a><figcaption>Figura 36 — Adicionar uma mensagem no caminho Contract.</figcaption></figure>
+
+<h3 id="passo-36-abrir-o-editor-da-segunda-mensagem">Passo 36 — Abrir o editor da segunda mensagem</h3>
+<p>É criada a <strong>User activity 3</strong> com o passo <strong>Message 2</strong>. Selecione <strong>Message 2</strong> e clique em <strong>{x}</strong> em <strong>Agent message</strong>.</p>
+<figure class="shot"><a href="images/fig-37.png" target="_blank" rel="noopener"><img src="images/fig-37.png" alt="Painel de Message 2 com o ícone de variáveis destacado" loading="lazy"></a><figcaption>Figura 37 — Abrir o editor da segunda mensagem.</figcaption></figure>
+
+<h3 id="passo-37-escolher-as-variaveis-do-contrato">Passo 37 — Escolher as variáveis do contrato</h3>
+<p>Clique no extrator do contrato e escolha <code>buyer</code> e <code>supplier</code>.</p>
+<figure class="shot"><a href="images/fig-38.png" target="_blank" rel="noopener"><img src="images/fig-38.png" alt="Seletor de variáveis com buyer e supplier destacados" loading="lazy"></a><figcaption>Figura 38 — Escolher as variáveis do contrato.</figcaption></figure>
+
+<h3 id="passo-38-mensagem-do-contrato-pronta">Passo 38 — Mensagem do contrato pronta</h3>
+<p>As variáveis <code>buyer</code> e <code>supplier</code> aparecem em <strong>Agent message</strong>.</p>
+<figure class="shot"><a href="images/fig-39.png" target="_blank" rel="noopener"><img src="images/fig-39.png" alt="Agent message com as etiquetas buyer e supplier" loading="lazy"></a><figcaption>Figura 39 — Mensagem do contrato pronta.</figcaption></figure>
+
+<blockquote>
+<p><strong>Dica:</strong> por exemplo, <em>Contrato entre <code>buyer</code> (comprador) e <code>supplier</code> (fornecedor).</em></p>
+</blockquote>
+<h2 id="parte-10-salvar-o-workflow">Parte 10 — Salvar o workflow</h2>
+<h3 id="passo-39-conferir-o-fluxo-e-clicar-em-done">Passo 39 — Conferir o fluxo e clicar em Done</h3>
+<p>O fluxo completo fica assim: upload do arquivo, Document classifier, Branch e, em cada caminho, um extrator seguido de uma mensagem. Os dois caminhos terminam no nó de fim (<strong>1 output</strong>).</p>
+<ol>
+<li><strong>Antes de salvar, ligue a saída:</strong> clique em <strong>1 output</strong> no nó de fim, depois em <strong>Edit data mapping</strong>, e escolha <strong>Document classifier › class_name</strong> para a saída <code>Class_name</code>.</li>
+<li>Clique em <strong>Done</strong> para salvar o workflow e voltar ao agente.</li>
+</ol>
+<figure class="shot"><a href="images/fig-40.png" target="_blank" rel="noopener"><img src="images/fig-40.png" alt="Fluxo completo com os dois caminhos e o botão Done destacado" loading="lazy"></a><figcaption>Figura 40 — Conferir o fluxo e clicar em Done.</figcaption></figure>
+
+<blockquote>
+<p><strong>Atenção:</strong> sem o mapeamento do passo 1, o workflow termina sem devolver o tipo do documento.</p>
+</blockquote>
+<h3 id="passo-40-de-volta-ao-agente">Passo 40 — De volta ao agente</h3>
+<p>O editor fecha e o workflow <strong>Document processing</strong> aparece na aba <strong>Tools</strong> do agente, com o tipo <em>Agentic Workflow</em>. O próximo passo é preencher o campo <strong>Instructions</strong> na aba <strong>Behavior</strong>.</p>
+<figure class="shot"><a href="images/fig-41.png" target="_blank" rel="noopener"><img src="images/fig-41.png" alt="Aba Tools com o card do workflow Document processing" loading="lazy"></a><figcaption>Figura 41 — De volta ao agente.</figcaption></figure>
+
+<blockquote>
+<p><strong>Dica:</strong> o card mostra <em>No description</em>. Uma descrição curta do workflow (por exemplo, <em>Classifies a document as contract or invoice and extracts its core fields</em>) ajuda o agente a escolher a ferramenta certa. Abra o workflow pelo <strong>Open flow builder</strong> e procure a descrição nas configurações (ícone de engrenagem ao lado do nome do workflow).</p>
+</blockquote>
+<h2 id="parte-11-instruir-e-testar-o-agente">Parte 11 — Instruir e testar o agente</h2>
+<h3 id="passo-41-escrever-a-instrucao-do-agente">Passo 41 — Escrever a instrução do agente</h3>
+<p>Na aba <strong>Behavior</strong>, confira a <strong>Description</strong> do agente e preencha <strong>Instructions</strong> com:</p>
+<div class="code"><button class="copy" type="button">Copiar</button><pre><code class="language-text">Invoke the Document processing tool and output the result
+</code></pre></div>
+<p>A instrução cita o nome exato do workflow (<em>Document processing</em>). Isso ajuda o agente a escolher a ferramenta certa.</p>
+<figure class="shot"><a href="images/fig-42.png" target="_blank" rel="noopener"><img src="images/fig-42.png" alt="Aba Behavior com Description e Instructions destacados" loading="lazy"></a><figcaption>Figura 42 — Escrever a instrução do agente.</figcaption></figure>
+
+<h3 id="passo-42-iniciar-o-teste-no-draft-preview">Passo 42 — Iniciar o teste no Draft Preview</h3>
+<p>No <strong>Draft Preview</strong>, digite um pedido como <code>Quero usar o document processing</code> e clique no botão de enviar.</p>
+<p>O agente entende pedidos em português. Não é preciso usar uma frase fixa.</p>
+<figure class="shot"><a href="images/fig-43.png" target="_blank" rel="noopener"><img src="images/fig-43.png" alt="Draft Preview com a mensagem Quero usar o document processing" loading="lazy"></a><figcaption>Figura 43 — Iniciar o teste no Draft Preview.</figcaption></figure>
+
+<h3 id="passo-43-o-workflow-pede-o-arquivo">Passo 43 — O workflow pede o arquivo</h3>
+<p>O agente chama o workflow, que começa pela user activity <strong>File upload 1</strong>. Clique em <strong>Upload document</strong>.</p>
+<figure class="shot"><a href="images/fig-44.png" target="_blank" rel="noopener"><img src="images/fig-44.png" alt="Chat com o botão Upload document destacado" loading="lazy"></a><figcaption>Figura 44 — O workflow pede o arquivo.</figcaption></figure>
+
+<h3 id="passo-44-enviar-a-fatura">Passo 44 — Enviar a fatura</h3>
+<p>Escolha <code>Invoice.pdf</code>. O arquivo aparece abaixo do botão. Clique em <strong>Submit</strong>.</p>
+<figure class="shot"><a href="images/fig-45.png" target="_blank" rel="noopener"><img src="images/fig-45.png" alt="Invoice.pdf anexado e o botão Submit destacado" loading="lazy"></a><figcaption>Figura 45 — Enviar a fatura.</figcaption></figure>
+
+<h3 id="passo-45-revisar-a-extracao">Passo 45 — Revisar a extração</h3>
+<p>Depois de classificar e extrair, o agente responde <em>I'll need you to review the document extraction</em> e mostra o cartão <strong>Review document extraction</strong> do <code>Invoice.pdf</code>.</p>
+<p>Clique em <strong>View</strong>, confira os valores extraídos, corrija o que estiver errado e confirme. O fluxo então continua pelo caminho Invoice e mostra a mensagem com <code>invoice_id</code> e <code>invoice_date</code>.</p>
+<p>Essa revisão é o <em>human-in-the-loop</em> do extrator. Verificar mais documentos de exemplo no extrator melhora a acurácia.</p>
+<figure class="shot"><a href="images/fig-46.png" target="_blank" rel="noopener"><img src="images/fig-46.png" alt="Cartão Review document extraction do Invoice.pdf com o link View" loading="lazy"></a><figcaption>Figura 46 — Revisar a extração.</figcaption></figure>
+
+<h2 id="conclusao-e-proximos-testes">Conclusão e próximos testes</h2>
+<p>Pronto: o agente recebe um documento no chat, identifica o tipo, extrai os campos principais e devolve o resultado. Para validar o lab por completo:</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Teste</th>
+<th>O que conferir</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>1</td>
+<td>Repetir o teste com <code>Contract.pdf</code></td>
+<td>O fluxo segue pelo caminho Contract e mostra Buyer e Supplier com os valores esperados</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Testar com <code>Invoice_2.pdf</code> (opcional)</td>
+<td>A extração funciona numa fatura de outro fornecedor e layout, que o extrator nunca viu</td>
+</tr>
+<tr>
+<td>3</td>
+<td>Abrir o workflow e conferir o nó de fim</td>
+<td><code>Class_name</code> mapeado para <strong>Document classifier › class_name</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Quando os testes passarem, clique em <strong>Deploy</strong> e confirme a publicação do agente.</p>
+<blockquote>
+<p><strong>Ponto principal para a turma:</strong> o agente conversa e decide; o agentic workflow garante os passos de negócio na ordem certa, com classificação, extração e revisão humana quando necessário.</p>
+</blockquote>
+<h2 id="problemas-comuns-e-checklist">Problemas comuns e checklist</h2>
+<table>
+<thead>
+<tr>
+<th>Sintoma</th>
+<th>Causa provável</th>
+<th>Como resolver</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>O agente responde, mas não chama o workflow</td>
+<td>Instruction genérica ou workflow sem descrição</td>
+<td>Cite o nome exato da ferramenta nas Instructions e dê uma descrição ao workflow</td>
+</tr>
+<tr>
+<td>Toda fatura cai no caminho Contract</td>
+<td>Valor da condição do Branch diferente do nome da classe</td>
+<td>Use exatamente <code>Invoice</code>, com o I maiúsculo</td>
+</tr>
+<tr>
+<td>Um campo vem vazio ou incompleto</td>
+<td>Modelo, nome ou descrição do campo pouco claros</td>
+<td>Teste outro modelo no extrator, ajuste o nome ou a descrição do campo ou envie mais documentos de exemplo</td>
+</tr>
+<tr>
+<td>A mensagem mostra a variável errada</td>
+<td>Os dois extratores com o mesmo nome</td>
+<td>Renomeie para Invoice extractor e Contract extractor e insira as variáveis de novo pelo <strong>{x}</strong></td>
+</tr>
+<tr>
+<td>A revisão aparece em todo documento</td>
+<td>Poucos documentos verificados no extrator</td>
+<td>Verifique mais documentos de exemplo no extrator para aumentar a acurácia</td>
+</tr>
+<tr>
+<td>O workflow termina sem devolver o tipo</td>
+<td>Saída <code>Class_name</code> sem mapeamento</td>
+<td>No nó de fim, <strong>Edit data mapping</strong> → <strong>Document classifier › class_name</strong></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Checklist do aluno</strong></p>
+<ul class="checklist"><li><label><input type="checkbox" data-key="c0"> <span>Agente Document processing agent criado com Description</span></label></li><li><label><input type="checkbox" data-key="c1"> <span>Agentic workflow Document processing criado</span></label></li><li><label><input type="checkbox" data-key="c2"> <span>Saída Class_name (String) adicionada ao nó de fim</span></label></li><li><label><input type="checkbox" data-key="c3"> <span>User activity com File upload adicionada</span></label></li><li><label><input type="checkbox" data-key="c4"> <span>Document classifier com as classes Contract e Invoice, testado com os dois PDFs</span></label></li><li><label><input type="checkbox" data-key="c5"> <span>Branch com o caminho Invoice (class_name == Invoice) e o caminho Contract (default)</span></label></li><li><label><input type="checkbox" data-key="c6"> <span>Invoice extractor (Structured, schema Invoice) verificado com Invoice.pdf</span></label></li><li><label><input type="checkbox" data-key="c7"> <span>Contract extractor (Unstructured, Buyer e Supplier) verificado com Contract.pdf</span></label></li><li><label><input type="checkbox" data-key="c8"> <span>Mensagens com as variáveis nos dois caminhos</span></label></li><li><label><input type="checkbox" data-key="c9"> <span>Class_name mapeado para Document classifier › class_name e workflow salvo com Done</span></label></li><li><label><input type="checkbox" data-key="c10"> <span>Instructions preenchidas e teste com Invoice.pdf e Contract.pdf no Draft Preview</span></label></li><li><label><input type="checkbox" data-key="c11"> <span>Agente publicado com Deploy</span></label></li></ul>
+    <footer>Lab 3 · IBM watsonx Orchestrate · Agentic workflow de processamento de documentos · Arquivos de teste fictícios.</footer>
+  </main>
+</div>
+<script>
+(function(){
+  // Copiar blocos de texto
+  document.querySelectorAll('.code').forEach(function(box){
+    var btn = box.querySelector('.copy'), code = box.querySelector('code');
+    btn.addEventListener('click', function(){
+      var text = code.textContent;
+      var done = function(){ btn.textContent = 'Copiado!'; btn.classList.add('done'); setTimeout(function(){ btn.textContent = 'Copiar'; btn.classList.remove('done'); }, 1600); };
+      if (navigator.clipboard && window.isSecureContext) { navigator.clipboard.writeText(text).then(done, fallback); } else { fallback(); }
+      function fallback(){ var t = document.createElement('textarea'); t.value = text; t.style.position = 'fixed'; t.style.opacity = '0'; document.body.appendChild(t); t.select(); try { document.execCommand('copy'); done(); } catch(e) {} document.body.removeChild(t); }
+    });
+  });
+
+  // Checklist com progresso salvo no navegador
+  var boxes = document.querySelectorAll('.checklist input');
+  var list = document.querySelector('.checklist');
+  if (list) {
+    var prog = document.createElement('p'); prog.className = 'progress'; list.parentNode.insertBefore(prog, list);
+    var KEY = 'lab-document-processing-checklist', saved = {};
+    try { saved = JSON.parse(localStorage.getItem(KEY) || '{}'); } catch(e) {}
+    var update = function(){ var n = 0; boxes.forEach(function(b){ if (b.checked) n++; }); prog.textContent = n + ' de ' + boxes.length + ' concluídos'; };
+    boxes.forEach(function(b){
+      b.checked = !!saved[b.dataset.key];
+      b.addEventListener('change', function(){ saved[b.dataset.key] = b.checked; try { localStorage.setItem(KEY, JSON.stringify(saved)); } catch(e) {} update(); });
+    });
+    update();
+  }
+
+  // Menu no celular
+  var toc = document.getElementById('toc'), mb = document.querySelector('.menu-btn');
+  mb.addEventListener('click', function(){ var o = toc.classList.toggle('open'); mb.setAttribute('aria-expanded', o); });
+  toc.addEventListener('click', function(e){ if (e.target.tagName === 'A') { toc.classList.remove('open'); mb.setAttribute('aria-expanded', 'false'); } });
+
+  // Destacar a seção atual no sumário
+  var links = {}; toc.querySelectorAll('a').forEach(function(a){ links[decodeURIComponent(a.hash.slice(1))] = a; });
+  var heads = document.querySelectorAll('main h2[id], main h3[id]');
+  if ('IntersectionObserver' in window) {
+    var current;
+    var io = new IntersectionObserver(function(entries){
+      entries.forEach(function(en){ if (en.isIntersecting) { if (current) current.classList.remove('active'); current = links[en.target.id]; if (current) current.classList.add('active'); } });
+    }, { rootMargin: '-64px 0px -70% 0px' });
+    heads.forEach(function(h){ io.observe(h); });
+  }
+})();
+</script>
+</body>
+</html>
